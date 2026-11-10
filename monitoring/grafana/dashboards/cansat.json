@@ -65,6 +65,8 @@
             "uid": "prometheus"
           },
           "expr": "sum by (state) (cansat_flight_state == 1)",
+          "instant": true,
+          "range": false,
           "legendFormat": "{{state}}"
         }
       ]
