@@ -240,5 +240,22 @@ class Pruebas(unittest.TestCase):
         print(f"\n   [rafaga] {n} paquetes en {dt:.2f} s ({n/dt:.0f} paquetes/s), 0 perdidos")
 
 
+    def test_11_metricas_prometheus(self):
+        """/metrics expone la ultima telemetria en formato de texto de Prometheus."""
+        status, body = http("/metrics")
+        self.assertEqual(status, 200)
+        text = body.decode()
+        self.assertIn("cansat_packets_received 0", text)   # mision recien reiniciada
+        send(valid_line(1))
+        self.assertTrue(wait_until(lambda: state()["total"] >= 1))
+        text = http("/metrics")[1].decode()
+        self.assertIn("cansat_packets_received 1", text)
+        for nombre in ("cansat_altitude_meters", "cansat_velocity_mps", "cansat_temperature_celsius",
+                       "cansat_pressure_kpa", "cansat_voltage_volts"):
+            self.assertIn(nombre + " ", text)
+        self.assertEqual(text.count('cansat_flight_state{state="'), 5)
+        self.assertIn('cansat_flight_state{state="LAUNCH_PAD"} 1', text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

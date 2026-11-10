@@ -1,5 +1,0 @@
-﻿__pycache__/
-*.pyc
-telemetry_log_*.csv
-
-.env
