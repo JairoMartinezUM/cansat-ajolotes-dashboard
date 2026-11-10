@@ -1,0 +1,69 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, taller-devops]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Pruebas modo LoRa (sin hardware)
+        run: python tests/test_lora_bridge.py
+      - name: Pruebas modo simulador
+        run: python tests/test_sistema.py
+
+  imagen:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta                      # genera nombre en minusculas y etiquetas
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  despliegue:
+    # Solo corre cuando exista el runner en el servidor y la variable DEPLOY_ENABLED=true
+    # (Settings > Secrets and variables > Actions > Variables)
+    needs: imagen
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: [self-hosted, linux, cansat-server]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Actualizar contenedores en el servidor
+        env:
+          DASHBOARD_TAG: ${{ github.ref_name }}
+        run: |
+          cp /etc/cansat/.env .env        # contrasena de Grafana y limites; vive solo en el servidor
+          docker compose pull dashboard
+          docker compose up -d --remove-orphans
+          docker image prune -f

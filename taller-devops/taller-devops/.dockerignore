@@ -1,0 +1,14 @@
+.git
+.github
+__pycache__
+*.pyc
+telemetry_log_*.csv
+diagramas
+docs
+tests
+monitoring
+scripts
+ground_station.py
+requirements-ground.txt
+*.md
+.env

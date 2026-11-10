@@ -1,0 +1,90 @@
+# Dashboard CanSat + monitoreo (Prometheus + Grafana).
+#   PC / servidor:   docker compose up -d --build
+#   Solo servidor:   COMPOSE_PROFILES=server  (agrega node-exporter y cAdvisor; necesitan Linux)
+name: cansat
+
+services:
+  dashboard:
+    image: ${DASHBOARD_IMAGE:-ghcr.io/jairomartinezum/cansat-ajolotes-dashboard}:${DASHBOARD_TAG:-latest}
+    build: .
+    # Modo simulador (lo del taller). Para LoRa en Linux se cambiaria a:
+    #   command: ["python", "dashboard.py", "--host", "0.0.0.0", "--serial", "/dev/ttyUSB0"]
+    #   devices: ["/dev/ttyUSB0:/dev/ttyUSB0"]
+    command: ["python", "dashboard.py", "--host", "0.0.0.0"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - cansat-logs:/data          # los CSV de telemetria sobreviven a reinicios
+    restart: unless-stopped
+    # Limites (cgroups). Cambialos en .env y haz `docker compose up -d` para la demo de SO.
+    mem_limit: ${DASHBOARD_MEM:-256m}
+    cpus: ${DASHBOARD_CPUS:-1.0}
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d      # disco mecanico: no guardar de mas
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"                  # solo desde el propio servidor
+    restart: unless-stopped
+    mem_limit: 384m
+    depends_on:
+      - dashboard
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-cambiame}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/cansat.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    mem_limit: 384m
+    depends_on:
+      - prometheus
+
+  node-exporter:                               # metricas del servidor (CPU, RAM, disco)
+    image: prom/node-exporter:v1.8.2
+    profiles: ["server"]
+    command: ["--path.rootfs=/host"]
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+    mem_limit: 64m
+
+  cadvisor:                                    # metricas por contenedor (cgroups)
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    profiles: ["server"]
+    command:
+      - --housekeeping_interval=15s
+      - --docker_only=true
+      - --store_container_labels=false
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    restart: unless-stopped
+    mem_limit: 128m
+
+volumes:
+  cansat-logs:
+  prometheus-data:
+  grafana-data:

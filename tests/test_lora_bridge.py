@@ -61,6 +61,12 @@ class TestConversion(unittest.TestCase):
         for field in FIELDS:
             self.assertIn(field, p)
 
+    def test_paquete_sin_id_usa_el_equipo_por_defecto(self):
+        """El firmware ya no manda "id" (ahorra tiempo en el aire)."""
+        raw = raw_packet()
+        del raw["id"]
+        self.assertEqual(LoraBridge().convert(raw)["TEAM_ID"], "FIT2026")
+
     def test_sin_voltaje_ni_carga_secundaria(self):
         p = LoraBridge().convert(raw_packet())
         self.assertEqual(p["VOLTAGE"], -1.0)
@@ -168,9 +174,11 @@ class TestDashboardModoLora(unittest.TestCase):
 
         with open(dashboard.log_path, newline="", encoding="utf-8") as f:
             rows = list(csv.reader(f))
-        self.assertEqual(rows[0], FIELDS)
+        self.assertEqual(rows[0], FIELDS + ["RSSI", "SNR"])            # el CSV lleva la calidad del enlace
         self.assertEqual(len(rows), 3)                                  # encabezado + 2 paquetes
         self.assertEqual(rows[2][FIELDS.index("PACKET_COUNT")], "2")
+        self.assertEqual(float(rows[2][-2]), -62.0)                     # RSSI
+        self.assertEqual(float(rows[2][-1]), 9.5)                       # SNR
 
     def test_reiniciar_mision_reinicia_el_tiempo(self):
         dashboard.on_lora_line(json.dumps(raw_packet(n=1, t=1000)))

@@ -1,0 +1,2 @@
+# Solo para ground_station.py (ventana de matplotlib). El dashboard web no lo necesita.
+matplotlib

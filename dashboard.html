@@ -188,6 +188,7 @@
     <div class="panel"><h2>Velocidad (m/s) <span id="l-vel"></span></h2><canvas id="ch-vel"></canvas></div>
     <div class="panel"><h2>Temperatura (&deg;C) <span id="l-temp"></span></h2><canvas id="ch-temp"></canvas></div>
     <div class="panel"><h2>Presion (kPa) <span id="l-pres"></span></h2><canvas id="ch-pres"></canvas></div>
+    <div class="panel lora-only" style="display:none"><h2>Enlace LoRa: RSSI (dBm) <span id="l-rssi"></span></h2><canvas id="ch-rssi"></canvas></div>
   </div>
 </main>
 
@@ -372,6 +373,7 @@ function render() {
     $("l-vel").textContent = last.VELOCITY.toFixed(1);
     $("l-temp").textContent = last.TEMPERATURE.toFixed(1);
     $("l-pres").textContent = last.PRESSURE.toFixed(2);
+    $("l-rssi").textContent = last.RSSI == null ? "" : last.RSSI.toFixed(0) + " (SNR " + (last.SNR == null ? "--" : last.SNR.toFixed(1)) + ")";
   } else {
     updatePhases(null);
     ["v-alt","v-vel","v-temp","v-pres","v-volt"].forEach(id => $(id).textContent = "--");
@@ -383,6 +385,8 @@ function render() {
   lineChart("ch-vel",  [{ color: "#ffb84d", get: p => p.VELOCITY }]);
   lineChart("ch-temp", [{ color: "#ff5d73", get: p => p.TEMPERATURE }]);
   lineChart("ch-pres", [{ color: "#3ddc97", get: p => p.PRESSURE }]);
+  if ($("ch-rssi").offsetParent !== null)   // solo en modo LoRa (el panel esta oculto en el simulador)
+    lineChart("ch-rssi", [{ color: "#c792ea", get: p => p.RSSI ?? -140 }]);
   lineChart("ch-acc", [
     { color: "#ff5d73", get: p => p.ACCEL_X },
     { color: "#3ddc97", get: p => p.ACCEL_Y },
@@ -407,13 +411,14 @@ async function poll() {
     const lora = s.mode === "lora";
     document.querySelectorAll(".sim-only").forEach(el => el.style.display = lora ? "none" : "");
     $("card-link").style.display = lora ? "" : "none";
+    document.querySelectorAll(".lora-only").forEach(el => el.style.display = lora ? "" : "none");
 
     if (lora) {
       const l = s.lora;
       let live = false, text;
       if (!l.connected) text = `Receptor ${l.port}: sin conexion`;
       else if (l.age === null) text = `Receptor ${l.port} conectado, esperando paquetes`;
-      else if (l.age > 5) text = `Sin senal LoRa hace ${Math.round(l.age)} s`;
+      else if (l.age > 10) text = `Sin senal LoRa hace ${Math.round(l.age)} s`;   // a SF alto llega un paquete cada ~3 s
       else { live = true; text = `LoRa en vivo (${l.port})`; }
       $("dot").classList.toggle("on", live);
       $("conn-text").textContent = text;

@@ -38,6 +38,11 @@ udp_port = 5005
 # `lora` es None en modo simulador.
 bridge = LoraBridge()
 lora = None
+EXTRA_FIELDS = ["RSSI", "SNR"]   # columnas extra del CSV, solo en modo LoRa (calidad del enlace)
+
+
+def csv_header():
+    return FIELDS + (EXTRA_FIELDS if lora else [])
 
 
 def new_log():
@@ -50,7 +55,7 @@ def new_log():
         log_path = BASE_DIR / f"telemetry_log_{stamp}_{n}.csv"
         n += 1
     with open(log_path, "w", newline="", encoding="utf-8") as f:
-        csv.writer(f).writerow(FIELDS)
+        csv.writer(f).writerow(csv_header())
     packets.clear()
     bridge.reset()
     epoch += 1
@@ -59,8 +64,11 @@ def new_log():
 def _store(packet):
     """Guarda un paquete en memoria y en el CSV. Llamar con `lock` tomado."""
     packets.append(packet)
+    row = [packet[field] for field in FIELDS]
+    if lora:
+        row += [packet.get(field) for field in EXTRA_FIELDS]
     with open(log_path, "a", newline="", encoding="utf-8") as f:
-        csv.writer(f).writerow([packet[field] for field in FIELDS])
+        csv.writer(f).writerow(row)
 
 
 def listener_thread(host, port):
@@ -255,12 +263,13 @@ def main():
             print(f"{device}  {desc}")
         return
 
+    if args.serial:   # `lora` antes de new_log(): el CSV lleva columnas extra en modo LoRa
+        lora = {"port": args.serial, "baud": args.baud, "connected": False, "error": "",
+                "packets": 0, "errors": 0, "last_rx": None, "rssi": None, "snr": None}
     new_log()
 
     if args.serial:
         from lora_bridge import serial_reader
-        lora = {"port": args.serial, "baud": args.baud, "connected": False, "error": "",
-                "packets": 0, "errors": 0, "last_rx": None, "rssi": None, "snr": None}
         threading.Thread(
             target=serial_reader,
             args=(args.serial, args.baud, on_lora_line, on_lora_status, threading.Event()),
