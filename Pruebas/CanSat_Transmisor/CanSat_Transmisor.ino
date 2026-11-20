@@ -1,8 +1,14 @@
 // CanSat - TRANSMISOR
 // ESP32 + SX1276 (clon Heltec WiFi LoRa 32 V2) + MPU6050 + BMP280
 //
-// Lee los sensores y transmite un paquete JSON por LoRa cada PERIODO_TX_MS.
+// Lee los sensores y transmite un paquete JSON por LoRa.
 // El receptor responde con "ACK:<n>" para saber si el paquete llego.
+//
+// Radio configurado para MAXIMO ALCANCE (a costa de velocidad): 20 dBm, BW 125 kHz,
+// codificacion 4/8, preambulo 12 y SF alto (SF10 por defecto). El periodo de envio y
+// la espera del ACK se calculan solos segun el SF (un paquete en SF10 dura ~1.7 s).
+// El boton PRG (GPIO0) cambia el SF: 7 -> 8 -> 9 -> 10. Pulsarlo en AMBAS placas
+// (con las dos cerca) para que usen el mismo perfil. Debe coincidir con el receptor.
 //
 // Librerias (Administrador de bibliotecas):
 //   - LoRa                (Sandeep Mistry)
@@ -11,12 +17,22 @@
 //   (el MPU6050 se lee directo por registros I2C: no necesita libreria y funciona
 //    tambien con modulos clon que no pasan la verificacion de identidad de Adafruit)
 //
+// BAROMETRO: el TX de 20 dBm desplaza ~11 Pa (~1 m) la lectura del BMP280 mientras el
+// amplificador esta encendido (medido con Diag_Baro_TX). Por eso: (1) el BMP280 va SIN
+// filtro IIR, asi el efecto es un escalon limpio; (2) solo se aceptan lecturas fuera de la
+// transmision (y GUARDA_TX_MS despues); (3) la velocidad se calcula por regresion con las
+// marcas de tiempo reales de esas lecturas; (4) en tierra el cero de altitud se reajusta
+// solo (con la placa quieta y a menos de ZERO_BANDA_M del cero) para absorber la deriva
+// termica; deja de ajustarse en cuanto despega. Un capacitor de 100 uF + 0.1 uF en el VCC
+// del BMP280 ayuda tambien.
+//
 // Conexion de sensores (bus I2C compartido con la OLED, pines 4 y 15):
 //   MPU6050 y BMP280:  VCC -> 3V3 | GND -> GND | SDA -> GPIO4 | SCL -> GPIO15
 //   (MPU6050 AD0 a GND -> 0x68. BMP280 SDO a GND -> 0x76 o a 3V3 -> 0x77)
 //
-// Paquete JSON (claves cortas para que quepa en un paquete LoRa):
-//   id equipo | n # paquete | t ms desde el arranque | alt m (relativa al arranque)
+// Paquete JSON (claves cortas para que quepa en un paquete LoRa; sin "id" para ahorrar
+// tiempo en el aire: el dashboard usa el TEAM_ID de telemetry_format.py):
+//   n # paquete | t ms desde el arranque | alt m (relativa al arranque)
 //   p presion kPa | T temperatura C | ax ay az m/s^2 | r pi y roll/pitch/yaw grados
 //   v velocidad vertical m/s (positiva = descendiendo)
 
@@ -26,14 +42,29 @@
 #include <U8g2lib.h>
 #include <Adafruit_BMP280.h>
 
-#define TEAM_ID        "FIT2026"
 #define FRECUENCIA     915E6
 
-#define PERIODO_TX_MS       1000   // cada cuanto se transmite un paquete
+// ---- Radio: maximo alcance ----
+#define POTENCIA_DBM   20          // maximo del SX1276 en PA_BOOST (17 es el valor por defecto)
+#define ANCHO_BANDA    125E3
+#define CODIF_CR       8           // 4/8 (mas robusto que 4/5)
+#define PREAMBULO      12
+#define PIN_BOTON      0           // PRG
+#define JSON_BYTES_MAX 125         // tamano maximo esperado del JSON (para calcular tiempos)
+#define ACK_BYTES      10          // "ACK:12345"
+#define PAUSA_ACK_MS   30          // pausa del receptor antes de responder el ACK
+
+const uint8_t PERFILES_SF[] = {7, 8, 9, 10};
+const int N_PERFILES = sizeof(PERFILES_SF);
+int perfil = 3;                    // SF10 al arrancar
+
+#define PERIODO_TX_MIN_MS   1000   // periodo minimo entre paquetes (el real depende del SF)
 #define PERIODO_SENSORES_MS 20     // lectura del MPU6050 (50 Hz) para el filtro
-#define PERIODO_BARO_MS     100    // lectura del BMP280 (10 Hz)
+#define PERIODO_BARO_MS     50     // lectura del BMP280 (20 Hz; las lecturas durante el TX se descartan)
 #define PERIODO_OLED_MS     500
-#define TIMEOUT_ACK_MS      800
+
+unsigned long periodoTxMs = PERIODO_TX_MIN_MS;
+unsigned long timeoutAckMs = 800;
 
 // Pines SX1276
 #define LORA_SCK   5
@@ -123,20 +154,27 @@ float ax = 0, ay = 0, az = 0;          // m/s^2
 float temperatura = 0, presionPa = 0;
 float altitud = 0, velocidad = 0;
 
-// Velocidad vertical: se deriva de una altitud suavizada, comparando contra la de
-// hace 1 s (10 muestras a 10 Hz). Derivar muestra a muestra amplificaria el ruido
-// del barometro (~0.3 m de jitter -> ~3 m/s falsos).
-#define VEL_VENTANA     10        // muestras del baro (1 s)
-#define ALT_SUAVIZADO   0.3f      // 0..1, menor = mas suave
-#define VEL_SUAVIZADO   0.4f      // peso de la medicion nueva en la velocidad
-float altSuave = 0;
-float histAlt[VEL_VENTANA];
-int histIdx = 0;
+// Barometro (ver nota arriba)
+#define GUARDA_TX_MS    100       // tras terminar un TX, descartar lecturas este tiempo
+#define ALT_SUAVIZADO   0.3f      // por muestra valida (0..1, menor = mas suave)
+#define PRES_SUAVIZADO  0.3f
+#define VEL_SUAVIZADO   0.6f      // peso de la velocidad nueva en cada paquete
+#define VEL_VENTANA_S   4.0f      // regresion de altitud sobre los ultimos 4 s de lecturas validas
+#define N_HIST          64
+#define ZERO_BANDA_M    1.5f      // cero autoajustable solo si |altitud| < esto...
+#define ZERO_VEL_MAX    0.2f      // ...y |velocidad| < esto (m/s)
+#define ZERO_ALFA       0.01f     // ~20 s de constante de tiempo
+struct MuestraAlt { unsigned long t; float alt; };
+MuestraAlt histAlt[N_HIST];
+int histN = 0, histIdx = 0;
+float altSuave = 0, pSuave = 0;
 unsigned long tPrevFiltro = 0, tPrevBaro = 0;
 
 // ---- Enlace LoRa ----
 volatile bool txTerminado = false;
 volatile bool rxPendiente = false;
+bool txActivo = false;                 // true desde que empieza hasta que termina una transmision
+unsigned long tFinTx = 0;              // millis() en que termino la ultima transmision
 unsigned long contador = 0;
 unsigned long ultimoTx = 0, ultimoOled = 0, ultimoSensor = 0;
 bool esperandoAck = false;
@@ -158,7 +196,9 @@ void pantalla(const char* l1, const char* l2 = "", const char* l3 = "", const ch
   oled.setFont(u8g2_font_7x13B_tr);
   oled.drawStr(3, 12, "TRANSMISOR");
   oled.setFont(u8g2_font_6x10_tf);
-  oled.drawStr(128 - 6 * 6 - 2, 11, "915MHz");
+  char der[16];
+  snprintf(der, sizeof(der), "SF%d %ddBm", PERFILES_SF[perfil], POTENCIA_DBM);
+  oled.drawStr(128 - 6 * strlen(der) - 2, 11, der);
   oled.setDrawColor(1);
   oled.drawStr(0, 27, l1);
   oled.drawStr(0, 38, l2);
@@ -211,18 +251,45 @@ void leerMpu(float dt) {
 }
 
 void leerBaro() {
+  // Lectura contaminada por el TX (el amplificador desplaza la presion): descartar
+  if (txActivo || millis() - tFinTx < GUARDA_TX_MS) return;
+
+  float p = bmp.readPressure();
+  if (isnan(p) || p < 30000 || p > 110000) return;     // lectura invalida del sensor
   temperatura = bmp.readTemperature();
-  presionPa   = bmp.readPressure();
-  altitud     = altitudDesdePresion(presionPa);
-
+  presionPa = p;
+  pSuave = (pSuave == 0) ? p : pSuave + PRES_SUAVIZADO * (p - pSuave);
+  altitud = altitudDesdePresion(p);
   altSuave += ALT_SUAVIZADO * (altitud - altSuave);
-  float altHaceUnSegundo = histAlt[histIdx];          // la muestra mas vieja de la ventana
-  histAlt[histIdx] = altSuave;
-  histIdx = (histIdx + 1) % VEL_VENTANA;
 
-  float ventanaS = VEL_VENTANA * PERIODO_BARO_MS / 1000.0f;
-  float vNueva = -(altSuave - altHaceUnSegundo) / ventanaS;   // positiva = descendiendo
-  velocidad += VEL_SUAVIZADO * (vNueva - velocidad);
+  histAlt[histIdx] = { millis(), altitud };            // historial para la velocidad
+  histIdx = (histIdx + 1) % N_HIST;
+  if (histN < N_HIST) histN++;
+
+  // Cero autoajustable: en tierra y quieto, la referencia sigue a la presion (absorbe la
+  // deriva termica). Fuera de la banda o con velocidad, queda congelada (vuelo).
+  if (fabsf(altSuave) < ZERO_BANDA_M && fabsf(velocidad) < ZERO_VEL_MAX)
+    presionBase += ZERO_ALFA * (pSuave - presionBase);
+}
+
+// Velocidad vertical = pendiente de la altitud (regresion lineal) sobre las lecturas
+// validas de los ultimos VEL_VENTANA_S segundos, con sus marcas de tiempo reales.
+// Positiva = descendiendo. Se calcula al armar cada paquete.
+float calcularVelocidad() {
+  unsigned long ahora = millis();
+  double n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0, xmin = 1e9, xmax = -1e9;
+  for (int i = 0; i < histN; i++) {
+    double x = -(double)(ahora - histAlt[i].t) / 1000.0;           // segundos respecto a ahora
+    if (x < -VEL_VENTANA_S) continue;
+    double y = histAlt[i].alt;
+    n++; sx += x; sy += y; sxx += x * x; sxy += x * y;
+    if (x < xmin) xmin = x;
+    if (x > xmax) xmax = x;
+  }
+  double den = n * sxx - sx * sx;
+  if (n < 6 || (xmax - xmin) < 1.5 || den < 1e-6) return velocidad;   // pocas lecturas: conservar
+  double pendiente = (n * sxy - sx * sy) / den;                       // m/s, positiva = subiendo
+  return velocidad + VEL_SUAVIZADO * ((float)(-pendiente) - velocidad);
 }
 
 void calibrar() {
@@ -250,28 +317,66 @@ void calibrar() {
     delay(50);
   }
   presionBase = sp / 20.0;
+  pSuave = presionBase;
   yaw = 0;
   altitud = altSuave = 0;
   velocidad = 0;
-  for (int i = 0; i < VEL_VENTANA; i++) histAlt[i] = 0;
-  histIdx = 0;
+  histN = histIdx = 0;
   Serial.print("Presion base: ");
   Serial.print(presionBase / 1000.0, 3);
   Serial.println(" kPa (altitud 0)");
 }
 
+// ---- Radio ----
+// Tiempo en el aire de un paquete (formula del datasheet del SX1276)
+float tiempoAireMs(int bytes, int sf) {
+  float ts = pow(2, sf) / ANCHO_BANDA * 1000.0;
+  bool ldro = (sf >= 11 && ANCHO_BANDA <= 125E3);
+  float num = 8.0 * bytes - 4.0 * sf + 28 + 16;          // CRC activado, cabecera explicita
+  float den = 4.0 * (sf - (ldro ? 2 : 0));
+  float simbolos = 8 + fmaxf(ceilf(num / den) * CODIF_CR, 0.0f);
+  return (PREAMBULO + 4.25) * ts + simbolos * ts;
+}
+
+void aplicarPerfil() {
+  int sf = PERFILES_SF[perfil];
+  LoRa.idle();
+  LoRa.setSpreadingFactor(sf);
+  LoRa.setSignalBandwidth(ANCHO_BANDA);
+  LoRa.setCodingRate4(CODIF_CR);
+  LoRa.setPreambleLength(PREAMBULO);
+  LoRa.setSyncWord(0x12);
+  LoRa.setTxPower(POTENCIA_DBM, PA_OUTPUT_PA_BOOST_PIN);
+  LoRa.enableCrc();                 // descarta paquetes corruptos
+  LoRa.receive();
+
+  // paquete + pausa del receptor + ACK; el periodo deja ademas margen entre envios
+  float aireJson = tiempoAireMs(JSON_BYTES_MAX, sf);
+  float aireAck = tiempoAireMs(ACK_BYTES, sf);
+  timeoutAckMs = aireJson + PAUSA_ACK_MS + aireAck + 600;     // cuenta desde que empieza el envio
+  periodoTxMs = max((float)PERIODO_TX_MIN_MS, aireJson + PAUSA_ACK_MS + aireAck + 400);
+
+  esperandoAck = false;
+  ackOk = false;
+  enviados = ackOkTotal = 0;
+  Serial.printf("Perfil SF%d | %d dBm | CR 4/%d | aire JSON=%.0f ms | periodo=%lu ms | espera ACK=%lu ms\n",
+                sf, POTENCIA_DBM, CODIF_CR, aireJson, periodoTxMs, timeoutAckMs);
+}
+
 // ---- Transmision ----
 void enviarPaquete() {
   char json[256];
-  contador++;
+  velocidad = calcularVelocidad();        // con las lecturas validas (fuera del TX) mas recientes
   int len = snprintf(json, sizeof(json),
-    "{\"id\":\"%s\",\"n\":%lu,\"t\":%lu,\"alt\":%.2f,\"p\":%.3f,\"T\":%.2f,"
-    "\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,\"r\":%.1f,\"pi\":%.1f,\"y\":%.1f,\"v\":%.2f}",
-    TEAM_ID, contador, millis(), altitud, presionPa / 1000.0, temperatura,
+    "{\"n\":%lu,\"t\":%lu,\"alt\":%.2f,\"p\":%.3f,\"T\":%.2f,"
+    "\"ax\":%.1f,\"ay\":%.1f,\"az\":%.1f,\"r\":%.1f,\"pi\":%.1f,\"y\":%.1f,\"v\":%.2f}",
+    contador + 1, millis(), altSuave, pSuave / 1000.0, temperatura,
     ax, ay, az, roll, pitch, yaw, velocidad);
 
   if (LoRa.beginPacket() == 0) return;    // todavia transmitiendo el anterior
+  contador++;
   LoRa.write((const uint8_t*)json, len);
+  txActivo = true;                        // desde aqui las lecturas del baro se descartan
   LoRa.endPacket(true);                   // asincrono: no bloquea las lecturas
 
   enviados++;
@@ -289,6 +394,8 @@ void enviarPaquete() {
 void revisarRecepcion() {
   if (txTerminado) {            // al terminar de transmitir, volver a escuchar el ACK
     txTerminado = false;
+    txActivo = false;
+    tFinTx = millis();
     LoRa.receive();
   }
   if (rxPendiente) {
@@ -302,7 +409,7 @@ void revisarRecepcion() {
       ackRssi = LoRa.packetRssi();
     }
   }
-  if (esperandoAck && millis() - tEnvio > TIMEOUT_ACK_MS) {
+  if (esperandoAck && millis() - tEnvio > timeoutAckMs) {
     esperandoAck = false;
     ackOk = false;
     Serial.println("Sin ACK");
@@ -312,7 +419,7 @@ void revisarRecepcion() {
 void actualizarOled() {
   char b1[32], b2[32], b3[32], b4[32];
   snprintf(b1, sizeof(b1), "Alt:%.1fm T:%.1fC", altitud, temperatura);
-  snprintf(b2, sizeof(b2), "P:%.2fkPa V:%.1f", presionPa / 1000.0, velocidad);
+  snprintf(b2, sizeof(b2), "P:%.2fkPa V:%.1f", pSuave / 1000.0, velocidad);
   snprintf(b3, sizeof(b3), "R%.0f P%.0f Y%.0f", roll, pitch, yaw);
   if (enviados == 0)      snprintf(b4, sizeof(b4), "TX #0");
   else if (esperandoAck)  snprintf(b4, sizeof(b4), "TX #%lu ACK..", contador);
@@ -340,7 +447,7 @@ void setup() {
   bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
                   Adafruit_BMP280::SAMPLING_X2,     // temperatura
                   Adafruit_BMP280::SAMPLING_X16,    // presion
-                  Adafruit_BMP280::FILTER_X16,
+                  Adafruit_BMP280::FILTER_OFF,      // sin IIR: el efecto del TX es un escalon limpio
                   Adafruit_BMP280::STANDBY_MS_1);
 
   if (!mpuIniciar()) detener("MPU6050 no responde", "Revisa SDA/SCL");
@@ -350,13 +457,10 @@ void setup() {
   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_SS);
   LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
   if (!LoRa.begin(FRECUENCIA)) detener("ERROR LoRa", "Revisa pines/antena");
-  LoRa.setSpreadingFactor(7);
-  LoRa.setSignalBandwidth(125E3);
-  LoRa.setSyncWord(0x12);
-  LoRa.enableCrc();                 // descarta paquetes corruptos
   LoRa.onTxDone(alTerminarTx);
   LoRa.onReceive(alRecibir);
-  LoRa.receive();
+  aplicarPerfil();                  // potencia, SF, CR, preambulo, CRC y modo recepcion
+  pinMode(PIN_BOTON, INPUT_PULLUP);
 
   Serial.println("Listo. Transmitiendo...");
   pantalla("Listo", "Transmitiendo...");
@@ -379,9 +483,17 @@ void loop() {
     leerBaro();
   }
 
+  // Boton PRG: siguiente perfil (pulsar tambien en el receptor)
+  static unsigned long ultimoBoton = 0;
+  if (digitalRead(PIN_BOTON) == LOW && ahora - ultimoBoton > 400) {
+    ultimoBoton = ahora;
+    perfil = (perfil + 1) % N_PERFILES;
+    aplicarPerfil();
+  }
+
   revisarRecepcion();
 
-  if (ahora - ultimoTx >= PERIODO_TX_MS) {
+  if (ahora - ultimoTx >= periodoTxMs) {
     ultimoTx = ahora;
     enviarPaquete();
   }
