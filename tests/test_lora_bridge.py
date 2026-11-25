@@ -26,7 +26,7 @@ sys.path.insert(0, str(BASE))
 import dashboard  # noqa: E402
 from flight_sim import FlightSimulator  # noqa: E402
 from lora_bridge import STATES, LoraBridge  # noqa: E402
-from telemetry_format import FIELDS  # noqa: E402
+from telemetry_format import FIELDS, CSV_FIELDS, TEAM_ID  # noqa: E402
 
 HTTP_PORT = 8011
 
@@ -65,7 +65,8 @@ class TestConversion(unittest.TestCase):
         """El firmware ya no manda "id" (ahorra tiempo en el aire)."""
         raw = raw_packet()
         del raw["id"]
-        self.assertEqual(LoraBridge().convert(raw)["TEAM_ID"], "FIT2026")
+        self.assertEqual(LoraBridge().convert(raw)["TEAM_ID"], TEAM_ID)
+        self.assertEqual(TEAM_ID, "AJOLOTES")
 
     def test_sin_voltaje_ni_carga_secundaria(self):
         p = LoraBridge().convert(raw_packet())
@@ -145,6 +146,37 @@ class TestEstadoDeVuelo(unittest.TestCase):
         self.assertEqual(seen[-1], "LANDED")
 
 
+class TestCorreccionesEnTierra(unittest.TestCase):
+    def test_altitud_y_velocidad_negativas_quedan_en_cero_en_tierra(self):
+        p = LoraBridge().convert(raw_packet(alt=-0.4, v=-0.2))
+        self.assertEqual(p["STATE"], "LAUNCH_PAD")
+        self.assertEqual(p["ALTITUDE"], 0.0)
+        self.assertEqual(p["VELOCITY"], 0.0)
+
+    def test_valores_positivos_en_tierra_no_se_tocan(self):
+        p = LoraBridge().convert(raw_packet(alt=0.3, v=0.1))
+        self.assertAlmostEqual(p["ALTITUDE"], 0.3)
+        self.assertAlmostEqual(p["VELOCITY"], 0.1)
+
+    def test_velocidad_negativa_en_ascenso_se_conserva(self):
+        p = LoraBridge().convert(raw_packet(alt=12.0, v=-2.5))
+        self.assertEqual(p["STATE"], "ASCENT")
+        self.assertAlmostEqual(p["VELOCITY"], -2.5)
+
+    def test_escala_del_acelerometro_en_reposo(self):
+        # Un sensor que en reposo mide |a| = 10.36 m/s^2 debe quedar en 1 g.
+        b = LoraBridge()
+        for i in range(12):
+            p = b.convert(raw_packet(n=i + 1, t=1000 * (i + 1), ax=2.7, ay=-0.3, az=10.0))
+        mod = (p["ACCEL_X"] ** 2 + p["ACCEL_Y"] ** 2 + p["ACCEL_Z"] ** 2) ** 0.5
+        self.assertAlmostEqual(mod, 9.80665, places=3)
+
+    def test_escala_fuera_de_rango_se_ignora(self):
+        # |a| = 20 no es un CanSat quieto: no se "corrige" a 1 g.
+        p = LoraBridge().convert(raw_packet(ax=0.0, ay=0.0, az=20.0))
+        self.assertAlmostEqual(p["ACCEL_Z"], 20.0)
+
+
 class TestDashboardModoLora(unittest.TestCase):
     """El dashboard (en el mismo proceso) alimentado con lineas del receptor."""
 
@@ -174,9 +206,9 @@ class TestDashboardModoLora(unittest.TestCase):
 
         with open(dashboard.log_path, newline="", encoding="utf-8") as f:
             rows = list(csv.reader(f))
-        self.assertEqual(rows[0], FIELDS + ["RSSI", "SNR"])            # el CSV lleva la calidad del enlace
+        self.assertEqual(rows[0], CSV_FIELDS + ["RSSI", "SNR"])            # el CSV lleva la calidad del enlace
         self.assertEqual(len(rows), 3)                                  # encabezado + 2 paquetes
-        self.assertEqual(rows[2][FIELDS.index("PACKET_COUNT")], "2")
+        self.assertEqual(rows[2][CSV_FIELDS.index("PACKET_COUNT")], "2")
         self.assertEqual(float(rows[2][-2]), -62.0)                     # RSSI
         self.assertEqual(float(rows[2][-1]), 9.5)                       # SNR
 

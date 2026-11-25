@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ajolotes CanSat - Estacion Terrena</title>
+<title>Ajolotes CanSat - Estacion Terrena v3</title>
 <style>
   @font-face { font-family: "Exo 2"; font-weight: 400; src: url(/fonts/Exo2-400.ttf) format("truetype"); font-display: swap; }
   @font-face { font-family: "Exo 2"; font-weight: 600; src: url(/fonts/Exo2-600.ttf) format("truetype"); font-display: swap; }
@@ -25,19 +25,21 @@
     --bad: #ff6b81;
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
+    height: 100vh; overflow: hidden; display: flex; flex-direction: column;
     margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.4 "Exo 2", system-ui, "Segoe UI", sans-serif;
     --display: "Michroma", "Eurostile", "Segoe UI", sans-serif;
   }
   header {
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 4px 16px; flex: none; border-bottom: 1px solid var(--border); background: var(--bg);
   }
   .brand { display: flex; align-items: center; gap: 14px; }
-  .brand img { width: 92px; height: 92px; margin: -6px 0; display: block; }
-  header h1 { margin: 0; font: 400 17px var(--display); letter-spacing: 3px; text-transform: uppercase; }
-  header h1 small { display: block; margin-top: 4px; color: var(--muted); font: 400 10px var(--display); letter-spacing: 3px; }
+  .brand img { width: 52px; height: 52px; display: block; }
+  header h1 { margin: 0; font: 400 15px var(--display); letter-spacing: 3px; text-transform: uppercase; }
+  header h1 small { display: block; margin-top: 2px; color: var(--muted); font: 400 10px var(--display); letter-spacing: 3px; }
   .spacer { flex: 1; }
   .conn { display: flex; align-items: center; gap: 8px; color: var(--muted); }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
@@ -46,62 +48,72 @@
   .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   button, select {
     background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 7px 12px; font: inherit; cursor: pointer;
+    border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer;
   }
   button:hover { border-color: var(--accent); }
   button.primary { background: var(--accent); border-color: var(--accent); color: #040a15; font-weight: 600; }
   button.danger:hover { border-color: var(--bad); color: var(--bad); }
 
-  main { padding: 16px 20px 28px; display: grid; gap: 16px; }
+  main { flex: 1; min-height: 0; padding: 8px 16px 10px; display: grid; gap: 8px;
+         grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 1fr); }
 
   .phases { display: flex; gap: 6px; }
   .phase {
-    flex: 1; text-align: center; padding: 9px 4px; border-radius: 6px;
+    flex: 1; text-align: center; padding: 5px 4px; border-radius: 6px;
     background: var(--panel); border: 1px solid var(--border); color: var(--muted);
     font-size: 12px; letter-spacing: 1px; text-transform: uppercase; font-family: var(--display); font-size: 10px;
   }
   .phase.done { color: var(--text); border-color: #2f3d73; }
   .phase.active { background: var(--accent); border-color: var(--accent); color: #040a15; font-weight: 700; }
 
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
   .card .label { color: var(--muted); font: 400 9px var(--display); text-transform: uppercase; letter-spacing: .6px; }
-  .card .value { font-size: 28px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .card .value { font-size: 22px; font-weight: 600; margin-top: 0; font-variant-numeric: tabular-nums; }
   .card .value small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 3px; }
   .bar { height: 5px; background: var(--panel-2); border-radius: 3px; margin-top: 8px; overflow: hidden; }
   .bar > div { height: 100%; width: 0; background: var(--ok); transition: width .3s, background .3s; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
-  .panel h2 { margin: 0 0 8px; font: 400 10px var(--display); color: var(--muted);
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; min-height: 0; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
+           display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .panel h2 { margin: 0 0 4px; flex: none; font: 400 10px var(--display); color: var(--muted);
               text-transform: uppercase; letter-spacing: .7px; display: flex; justify-content: space-between; }
   .panel h2 span { color: var(--text); font-family: "Exo 2", sans-serif; font-size: 13px; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
-  canvas { width: 100%; height: 190px; display: block; }
+  canvas { width: 100%; height: 0; flex: 1 1 0; min-height: 0; display: block; }
 
-  .viz { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
-  .viz canvas { height: 240px; }
+  .viz { display: flex; gap: 8px; min-height: 0; }
+  .viz > .panel { flex: 1 1 0; }
+  .viz > .panel.orient { flex: .5 1 0; }   /* modulo de orientacion compacto */
 
   /* Orientacion 3D con CSS puro */
-  .scene { height: 240px; display: flex; align-items: center; justify-content: center; perspective: 600px; }
-  .can { position: relative; width: 70px; height: 110px; transform-style: preserve-3d; transition: transform .45s linear; }
+  .scene { flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; perspective: 450px; }
+  .can { position: relative; width: 48px; height: 76px; transform-style: preserve-3d; transition: transform .45s linear; }
   .face { position: absolute; border: 1px solid rgba(255,255,255,.35); display: flex; align-items: center;
-          justify-content: center; font-size: 11px; color: rgba(255,255,255,.7); backface-visibility: visible; }
-  .f-front, .f-back  { width: 70px; height: 110px; background: rgba(127,160,214,.35); }
-  .f-left, .f-right  { width: 70px; height: 110px; background: rgba(127,160,214,.22); left: 0; }
-  .f-top, .f-bottom  { width: 70px; height: 70px; }
-  .f-top    { background: rgba(255,93,115,.55); top: -35px; transform: rotateX(90deg); }
-  .f-bottom { background: rgba(127,160,214,.18); bottom: -35px; transform: rotateX(-90deg); }
-  .f-front  { transform: translateZ(35px); }
-  .f-back   { transform: rotateY(180deg) translateZ(35px); }
-  .f-right  { transform: rotateY(90deg) translateZ(35px); }
-  .f-left   { transform: rotateY(-90deg) translateZ(35px); }
-  .angles { display: flex; justify-content: space-around; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+          justify-content: center; font-size: 9px; color: rgba(255,255,255,.7); backface-visibility: visible; }
+  .f-front, .f-back  { width: 48px; height: 76px; background: rgba(127,160,214,.35); }
+  .f-left, .f-right  { width: 48px; height: 76px; background: rgba(127,160,214,.22); left: 0; }
+  .f-top, .f-bottom  { width: 48px; height: 48px; }
+  .f-top    { background: rgba(255,93,115,.55); top: -24px; transform: rotateX(90deg); }
+  .f-bottom { background: rgba(127,160,214,.18); bottom: -24px; transform: rotateX(-90deg); }
+  .f-front  { transform: translateZ(24px); }
+  .f-back   { transform: rotateY(180deg) translateZ(24px); }
+  .f-right  { transform: rotateY(90deg) translateZ(24px); }
+  .f-left   { transform: rotateY(-90deg) translateZ(24px); }
+  .angles { flex: none; display: flex; justify-content: space-around; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
   .angles b { color: var(--text); font-weight: 600; }
 
-  .legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); }
+  .legend { flex: none; display: flex; gap: 12px; font-size: 11px; color: var(--muted); }
   .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; }
-  .secondary { text-align: center; color: var(--muted); font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
-  .secondary b { color: var(--warn); font-size: 15px; }
+  @media (max-width: 900px), (max-height: 520px) {
+    body { height: auto; overflow: auto; }
+    main { grid-template-rows: none; }
+    .viz { flex-wrap: wrap; }
+    .viz > .panel { flex: 1 1 300px; }
+    .grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    canvas { height: 190px; flex: none; }
+    .scene { height: 170px; flex: none; }
+  }
 </style>
 </head>
 <body>
@@ -136,13 +148,8 @@
     <div class="card"><div class="label">Tiempo de mision</div><div class="value" id="v-time">--:--:--</div></div>
     <div class="card"><div class="label">Altitud</div><div class="value"><span id="v-alt">--</span><small>m</small></div></div>
     <div class="card"><div class="label">Velocidad</div><div class="value"><span id="v-vel">--</span><small>m/s</small></div></div>
-    <div class="card"><div class="label">Temperatura</div><div class="value"><span id="v-temp">--</span><small>&deg;C</small></div></div>
+    <div class="card"><div class="label">Temperatura interna</div><div class="value"><span id="v-temp">--</span><small>&deg;C</small></div></div>
     <div class="card"><div class="label">Presion</div><div class="value"><span id="v-pres">--</span><small>kPa</small></div></div>
-    <div class="card">
-      <div class="label">Bateria</div>
-      <div class="value"><span id="v-volt">--</span><small>V</small></div>
-      <div class="bar"><div id="bat-bar"></div></div>
-    </div>
     <div class="card"><div class="label">Paquetes recibidos</div><div class="value" id="v-count">0</div></div>
     <div class="card" id="card-link" style="display:none">
       <div class="label">Enlace LoRa (RSSI)</div>
@@ -152,7 +159,7 @@
   </div>
 
   <div class="viz">
-    <div class="panel">
+    <div class="panel orient">
       <h2>Orientacion <span id="o-state"></span></h2>
       <div class="scene"><div class="can" id="can">
         <div class="face f-front">FRENTE</div><div class="face f-back">ATRAS</div>
@@ -176,19 +183,14 @@
       </div>
     </div>
 
-    <div class="panel">
-      <h2>Carga secundaria <span id="sec-state">esperando aterrizaje</span></h2>
-      <canvas id="radar"></canvas>
-      <div class="secondary" id="sec-info">Se activa en estado LANDED</div>
-    </div>
+    <div class="panel lora-only" style="display:none"><h2>Enlace LoRa: RSSI (dBm) <span id="l-rssi"></span></h2><canvas id="ch-rssi"></canvas></div>
   </div>
 
   <div class="grid">
     <div class="panel"><h2>Altitud (m) <span id="l-alt"></span></h2><canvas id="ch-alt"></canvas></div>
     <div class="panel"><h2>Velocidad (m/s) <span id="l-vel"></span></h2><canvas id="ch-vel"></canvas></div>
-    <div class="panel"><h2>Temperatura (&deg;C) <span id="l-temp"></span></h2><canvas id="ch-temp"></canvas></div>
+    <div class="panel"><h2>Temperatura interna (&deg;C) <span id="l-temp"></span></h2><canvas id="ch-temp"></canvas></div>
     <div class="panel"><h2>Presion (kPa) <span id="l-pres"></span></h2><canvas id="ch-pres"></canvas></div>
-    <div class="panel lora-only" style="display:none"><h2>Enlace LoRa: RSSI (dBm) <span id="l-rssi"></span></h2><canvas id="ch-rssi"></canvas></div>
   </div>
 </main>
 
@@ -203,7 +205,6 @@ const STATE_TINT = {
   FREEFALL: "rgba(255,93,115,.10)", AUTOGYRO_DESCENT: "rgba(61,220,151,.08)",
   LANDED: "rgba(255,184,77,.08)",
 };
-const BAT_FULL = 9.0, BAT_EMPTY = 6.5;
 
 const $ = id => document.getElementById(id);
 let data = [];       // paquetes recibidos (con .t en segundos)
@@ -224,7 +225,7 @@ function updatePhases(state) {
 function setupCanvas(c) {
   const dpr = window.devicePixelRatio || 1;
   const r = c.getBoundingClientRect();
-  if (c.width !== Math.round(r.width * dpr)) {
+  if (c.width !== Math.round(r.width * dpr) || c.height !== Math.round(r.height * dpr)) {
     c.width = Math.round(r.width * dpr);
     c.height = Math.round(r.height * dpr);
   }
@@ -298,39 +299,6 @@ function lineChart(canvasId, series) {
   }
 }
 
-function drawRadar(last) {
-  const { ctx, w, h } = setupCanvas($("radar"));
-  ctx.clearRect(0, 0, w, h);
-  const cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 - 18;
-  const MAX = 100; // m
-
-  ctx.strokeStyle = "rgba(138,150,192,.25)"; ctx.fillStyle = "#8a96c0";
-  ctx.font = "10px Exo 2, system-ui"; ctx.lineWidth = 1;
-  ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  for (let m = 25; m <= MAX; m += 25) {
-    ctx.beginPath(); ctx.arc(cx, cy, R * m / MAX, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillText(m + " m", cx + 3, cy - R * m / MAX + 7);
-  }
-  ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
-  ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
-  ctx.textAlign = "center";
-  ctx.fillText("N", cx, cy - R - 8); ctx.fillText("S", cx, cy + R + 8);
-  ctx.fillText("E", cx + R + 8, cy); ctx.fillText("O", cx - R - 8, cy);
-
-  ctx.fillStyle = "#7fa0d6"; ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
-
-  if (last && last.STATE === "LANDED" && last.SECONDARY_DIST >= 0) {
-    const d = Math.min(last.SECONDARY_DIST, MAX);
-    const a = last.SECONDARY_DIR * Math.PI / 180;  // 0 = norte, horario
-    const x = cx + Math.sin(a) * R * d / MAX, y = cy - Math.cos(a) * R * d / MAX;
-    ctx.strokeStyle = "#ffb84d"; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = "#ffb84d"; ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = "rgba(255,184,77,.4)"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.stroke();
-  }
-}
-
 // ---- render ----
 function render() {
   const last = data[data.length - 1];
@@ -342,16 +310,10 @@ function render() {
     $("v-vel").textContent = last.VELOCITY.toFixed(1);
     $("v-temp").textContent = last.TEMPERATURE.toFixed(1);
     $("v-pres").textContent = last.PRESSURE.toFixed(2);
-    const hasVolt = last.VOLTAGE >= 0;   // -1 = el transmisor no mide la bateria
-    $("v-volt").textContent = hasVolt ? last.VOLTAGE.toFixed(2) : "--";
     $("v-count").textContent = last.PACKET_COUNT;
     $("v-rssi").textContent = last.RSSI == null ? "--" : last.RSSI.toFixed(0);
     $("v-snr").textContent = last.SNR == null ? "--" : last.SNR.toFixed(1);
 
-    const pct = hasVolt ? Math.max(0, Math.min(1, (last.VOLTAGE - BAT_EMPTY) / (BAT_FULL - BAT_EMPTY))) : 0;
-    const bar = $("bat-bar");
-    bar.style.width = (pct * 100) + "%";
-    bar.style.background = pct > 0.5 ? "var(--ok)" : pct > 0.2 ? "var(--warn)" : "var(--bad)";
 
     updatePhases(last.STATE);
     $("o-state").textContent = STATE_LABELS[last.STATE] || last.STATE;
@@ -363,11 +325,6 @@ function render() {
     $("acc-now").textContent =
       `${last.ACCEL_X.toFixed(1)} / ${last.ACCEL_Y.toFixed(1)} / ${last.ACCEL_Z.toFixed(1)}`;
 
-    const landed = last.STATE === "LANDED" && last.SECONDARY_DIST >= 0;
-    $("sec-state").textContent = landed ? "detectada" : "esperando aterrizaje";
-    $("sec-info").innerHTML = landed
-      ? `<b>${last.SECONDARY_DIST.toFixed(1)} m</b> &nbsp;a&nbsp; <b>${last.SECONDARY_DIR.toFixed(0)}&deg;</b>`
-      : "Se activa en estado LANDED";
 
     $("l-alt").textContent = last.ALTITUDE.toFixed(1);
     $("l-vel").textContent = last.VELOCITY.toFixed(1);
@@ -376,9 +333,8 @@ function render() {
     $("l-rssi").textContent = last.RSSI == null ? "" : last.RSSI.toFixed(0) + " (SNR " + (last.SNR == null ? "--" : last.SNR.toFixed(1)) + ")";
   } else {
     updatePhases(null);
-    ["v-alt","v-vel","v-temp","v-pres","v-volt"].forEach(id => $(id).textContent = "--");
+    ["v-alt","v-vel","v-temp","v-pres"].forEach(id => $(id).textContent = "--");
     $("v-time").textContent = "--:--:--"; $("v-count").textContent = "0";
-    $("bat-bar").style.width = "0";
   }
 
   lineChart("ch-alt",  [{ color: "#7fa0d6", get: p => p.ALTITUDE }]);
@@ -392,7 +348,6 @@ function render() {
     { color: "#3ddc97", get: p => p.ACCEL_Y },
     { color: "#7fa0d6", get: p => p.ACCEL_Z },
   ]);
-  drawRadar(last);
 }
 
 function toSeconds(hms) {

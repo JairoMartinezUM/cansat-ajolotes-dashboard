@@ -13,7 +13,7 @@ de telemetria antes de tener el hardware/firmware real.
   del CanSat.
 - `ground_station.py` recibe esos paquetes por UDP, los guarda en un CSV con
   timestamp y los grafica en tiempo real (altitud, velocidad, temperatura,
-  presion, estado de vuelo, bateria, deteccion de la carga secundaria).
+  presion, estado de vuelo, bateria).
 
 Cuando el firmware real este listo, `ground_station.py` no cambia: solo hay
 que hacer que el firmware transmita lineas con el mismo formato de
@@ -55,8 +55,8 @@ python dashboard.py
 
 Abrir http://localhost:8000. Desde ahi se puede iniciar/detener el simulador
 (con la velocidad elegida), reiniciar la mision y exportar el CSV. Muestra
-fase de vuelo, tarjetas de estado, orientacion 3D, aceleraciones, radar de la
-carga secundaria y las graficas de altitud, velocidad, temperatura y presion.
+fase de vuelo, tarjetas de estado, orientacion 3D, aceleraciones, y
+las graficas de altitud, velocidad, temperatura y presion.
 No necesita dependencias extra. `ground_station.py` sigue funcionando igual.
 
 El dashboard funciona sin internet: las fuentes (Michroma y Exo 2, licencia

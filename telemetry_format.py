@@ -33,7 +33,12 @@ FIELDS = [
     "SECONDARY_DIR",    # deg, rumbo a la carga secundaria (solo valido en LANDED)
 ]
 
-TEAM_ID = "FIT2026"
+TEAM_ID = "AJOLOTES"
+
+# Columnas que ya no se usan (no hay medicion de bateria ni deteccion de carga secundaria).
+# El formato de transmision (FIELDS) no cambia, pero el CSV que se guarda y se exporta no las lleva.
+CSV_UNUSED = ("VOLTAGE", "SECONDARY_DIST", "SECONDARY_DIR")
+CSV_FIELDS = [f for f in FIELDS if f not in CSV_UNUSED]
 
 
 def encode(packet: dict) -> str:

@@ -22,6 +22,10 @@ import math
 
 from telemetry_format import TEAM_ID
 
+GRAVEDAD = 9.80665        # m/s^2
+ACCEL_CAL_PAQUETES = 10   # paquetes iniciales en LAUNCH_PAD que fijan la escala del acelerometro
+ACCEL_ESCALA_MIN, ACCEL_ESCALA_MAX = 0.90, 1.10   # fuera de este rango se ignora (no estaba quieto)
+
 STATES = ["LAUNCH_PAD", "ASCENT", "FREEFALL", "AUTOGYRO_DESCENT", "LANDED"]
 
 REQUIRED = ("n", "t", "alt", "p", "T", "ax", "ay", "az", "r", "pi", "y", "v")
@@ -98,6 +102,23 @@ class LoraBridge:
         self.t_ref = None        # ms del transmisor que corresponden a mission_time = 0
         self.last_t = None
         self.last_mission = 0.0
+        self.accel_n = 0         # paquetes usados para calibrar la escala del acelerometro
+        self.accel_sum = 0.0     # suma de |a| medida en reposo
+        self.accel_scale = 1.0
+
+    def _escala_aceleracion(self, ax, ay, az, state):
+        """Escala del acelerometro: en reposo |a| debe ser 1 g.
+
+        Con los primeros paquetes en LAUNCH_PAD (CanSat quieto en el punto de lanzamiento)
+        se promedia |a| y se calcula el factor que la lleva a 9.80665 m/s^2. Si el factor
+        sale fuera de 0.90-1.10 se ignora (el CanSat no estaba quieto)."""
+        if state == "LAUNCH_PAD" and self.accel_n < ACCEL_CAL_PAQUETES:
+            self.accel_n += 1
+            self.accel_sum += math.sqrt(ax * ax + ay * ay + az * az)
+            media = self.accel_sum / self.accel_n
+            factor = GRAVEDAD / media if media > 0 else 1.0
+            self.accel_scale = factor if ACCEL_ESCALA_MIN <= factor <= ACCEL_ESCALA_MAX else 1.0
+        return self.accel_scale
 
     def convert(self, raw):
         if not isinstance(raw, dict):
@@ -119,6 +140,16 @@ class LoraBridge:
         alt = _num(raw, "alt")
         vel = _num(raw, "v")
         state = self.estimator.update(alt, vel)
+        # En tierra no se registran valores negativos de altitud ni de velocidad (ruido del
+        # barometro): se dejan en 0. Se hace despues del estimador porque este usa la
+        # velocidad negativa para detectar el ascenso.
+        if state in ("LAUNCH_PAD", "LANDED"):
+            alt = max(0.0, alt)
+            vel = max(0.0, vel)
+
+        ax, ay, az = _num(raw, "ax"), _num(raw, "ay"), _num(raw, "az")
+        k = self._escala_aceleracion(ax, ay, az, state)
+        ax, ay, az = round(ax * k, 4), round(ay * k, 4), round(az * k, 4)
 
         team = str(raw.get("id", TEAM_ID)).replace(",", "")[:20] or TEAM_ID
         volt = _num(raw, "volt") if "volt" in raw else -1.0
@@ -132,9 +163,9 @@ class LoraBridge:
             "PRESSURE": _num(raw, "p"),
             "TEMPERATURE": _num(raw, "T"),
             "VOLTAGE": volt,
-            "ACCEL_X": _num(raw, "ax"),
-            "ACCEL_Y": _num(raw, "ay"),
-            "ACCEL_Z": _num(raw, "az"),
+            "ACCEL_X": ax,
+            "ACCEL_Y": ay,
+            "ACCEL_Z": az,
             "GYRO_ROLL": _num(raw, "r"),
             "GYRO_PITCH": _num(raw, "pi"),
             "GYRO_YAW": _num(raw, "y"),
