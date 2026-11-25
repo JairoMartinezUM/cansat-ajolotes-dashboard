@@ -2,8 +2,8 @@
 Simulador de vuelo del CanSat.
 
 Genera un flujo de paquetes de telemetria que sigue el perfil de la mision
-(ver CanSat.docx): ascenso a 450 m enganchado al dron, caida libre hasta
-200 m, despliegue del autogiro y descenso controlado a 8-12 m/s, aterrizaje
+(ver CanSat.docx): ascenso a 50 m enganchado al dron, caida libre hasta
+35 m, despliegue del autogiro y descenso controlado a 8-12 m/s, aterrizaje
 y 15 s de transmision post-aterrizaje con deteccion de la carga secundaria.
 
 Envia cada paquete por UDP a la estacion terrena (ground_station.py), igual
@@ -21,8 +21,8 @@ import time
 from telemetry_format import encode, TEAM_ID
 
 # --- Parametros de la mision (ver limites de diseno en CanSat.docx) ---
-LAUNCH_ALTITUDE = 450.0       # m
-AUTOGYRO_ALTITUDE = 200.0     # m
+LAUNCH_ALTITUDE = 50.0        # m
+AUTOGYRO_ALTITUDE = 35.0      # m
 ASCENT_RATE = 2.5             # m/s, velocidad de ascenso con el dron
 FREEFALL_TERMINAL_V = 35.0    # m/s
 AUTOGYRO_V_MIN = 8.0          # m/s

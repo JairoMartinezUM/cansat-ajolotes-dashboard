@@ -24,7 +24,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 from lora_bridge import LoraBridge, STATES
-from telemetry_format import decode, FIELDS
+from telemetry_format import decode, FIELDS, CSV_FIELDS
 
 BASE_DIR = Path(__file__).resolve().parent
 # Carpeta de los CSV. En Docker se monta como volumen (CANSAT_LOG_DIR=/data).
@@ -45,7 +45,7 @@ EXTRA_FIELDS = ["RSSI", "SNR"]   # columnas extra del CSV, solo en modo LoRa (ca
 
 
 def csv_header():
-    return FIELDS + (EXTRA_FIELDS if lora else [])
+    return CSV_FIELDS + (EXTRA_FIELDS if lora else [])
 
 
 def new_log():
@@ -68,7 +68,7 @@ def new_log():
 def _store(packet):
     """Guarda un paquete en memoria y en el CSV. Llamar con `lock` tomado."""
     packets.append(packet)
-    row = [packet[field] for field in FIELDS]
+    row = [packet[field] for field in CSV_FIELDS]
     if lora:
         row += [packet.get(field) for field in EXTRA_FIELDS]
     with open(log_path, "a", newline="", encoding="utf-8") as f:
@@ -293,11 +293,31 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "no encontrado"})
 
 
+def _ips_locales():
+    """Direcciones IPv4 de esta computadora en sus redes (no se envia ningun paquete).
+
+    Pueden salir varias (WiFi, Ethernet, VPN...): el celular debe usar la de su misma red."""
+    ips = []
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith(("127.", "169.254.")) and ip not in ips:
+                ips.append(ip)
+    except OSError:
+        pass
+    return ips
+
+
 def main():
     global udp_port, lora
 
     parser = argparse.ArgumentParser(description="Dashboard web de la estacion terrena del CanSat")
-    parser.add_argument("--host", default="127.0.0.1", help="IP donde escuchar UDP y servir HTTP")
+    parser.add_argument("--host", default=None,
+                        help="IP donde escuchar UDP y servir HTTP (por defecto: la pagina se sirve "
+                             "en toda la red local y la telemetria UDP solo en 127.0.0.1)")
+    parser.add_argument("--local", action="store_true",
+                        help="Sirve el dashboard solo en esta computadora (sin acceso desde el celular)")
+    parser.add_argument("--lan", action="store_true", help=argparse.SUPPRESS)   # antiguo: ya es el valor por defecto
     parser.add_argument("--port", type=int, default=5005, help="Puerto UDP de telemetria")
     parser.add_argument("--http-port", type=int, default=8000, help="Puerto del dashboard web")
     parser.add_argument("--serial", metavar="COMx",
@@ -306,6 +326,9 @@ def main():
     parser.add_argument("--list-ports", action="store_true", help="Lista los puertos serie y sale")
     args = parser.parse_args()
     udp_port = args.port
+    # La pagina se abre a la red local por defecto (para verla desde el celular); --local lo evita.
+    http_host = args.host or ("127.0.0.1" if args.local else "0.0.0.0")
+    udp_host = args.host or "127.0.0.1"
 
     if args.list_ports:
         from lora_bridge import list_ports
@@ -328,10 +351,19 @@ def main():
         print(f"Modo LoRa: leyendo el receptor en {args.serial} a {args.baud} baudios "
               "(cierra el Monitor Serie del Arduino IDE, usa el mismo puerto)")
     else:
-        threading.Thread(target=listener_thread, args=(args.host, args.port), daemon=True).start()
+        threading.Thread(target=listener_thread, args=(udp_host, args.port), daemon=True).start()
 
-    server = ThreadingHTTPServer((args.host, args.http_port), Handler)
-    print(f"Dashboard en http://{args.host}:{args.http_port}")
+    server = ThreadingHTTPServer((http_host, args.http_port), Handler)
+    if http_host == "0.0.0.0":
+        print(f"Dashboard en esta computadora: http://localhost:{args.http_port}")
+        print("Desde el celular (mismo WiFi), usa la direccion de tu red WiFi:")
+        for ip in _ips_locales():
+            print(f"   http://{ip}:{args.http_port}")
+        print("AVISO: cualquiera en esa red puede ver el dashboard y usar Reiniciar / Exportar.")
+    else:
+        print(f"Dashboard en http://{http_host}:{args.http_port}")
+        if http_host in ("127.0.0.1", "localhost"):
+            print("Solo accesible desde esta computadora (quita --local para verlo desde el celular)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
